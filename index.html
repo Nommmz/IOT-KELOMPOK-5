@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Monitoring Arus Listrik</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+
+    h1 {
+      color: #247e7e;
+      margin-bottom: 10px;
+    }
+
+    #latest-value {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
+    }
+
+    #chart-container {
+      width: 90%;
+      max-width: 900px;
+      margin: auto;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    canvas {
+      max-width: 100%;
+    }
+
+    .footer {
+      margin-top: 30px;
+      font-size: 14px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dashboard Monitoring Arus Listrik (Ampere)</h1>
+  <div id="latest-value">Arus saat ini: 0.00 A</div>
+
+  <div id="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="footer">Simulasi Dummy Data (Tanpa WebSocket)</div>
+
+  <script>
+    const ctx = document.getElementById('chart').getContext('2d');
+
+    const data = {
+      labels: [],
+      datasets: [{
+        label: 'Arus (Ampere)',
+        data: [],
+        borderColor: '#247e7e',
+        backgroundColor: 'rgba(36, 126, 126, 0.1)',
+        tension: 0.3,
+        pointRadius: 2,
+        fill: true
+      }]
+    };
+
+    const config = {
+      type: 'line',
+      data: data,
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Waktu (detik)'
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: 'Ampere'
+            },
+            beginAtZero: true
+          }
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          }
+        }
+      }
+    };
+
+    const chart = new Chart(ctx, config);
+
+    // Fungsi untuk memperbarui data dummy
+    let counter = 0;
+    setInterval(() => {
+      const dummyY = parseFloat((Math.random() * 5).toFixed(2)); // 0 - 5 A
+      data.labels.push(counter);
+      data.datasets[0].data.push(dummyY);
+
+      if (data.labels.length > 50) {
+        data.labels.shift();
+        data.datasets[0].data.shift();
+      }
+
+      chart.update();
+      document.getElementById('latest-value').textContent = `Arus saat ini: ${dummyY} A`;
+      counter++;
+    }, 1000);
+  </script>
+</body>
+</html>
