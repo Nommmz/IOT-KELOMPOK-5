@@ -1,130 +1,104 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard Monitoring Arus Listrik</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    * {
-      box-sizing: border-box;
+#include "olcWebSocketServer.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
+
+using namespace std;
+
+class Server : public olc::WebSocketServer
+{
+public:
+    Server()
+        : olc::WebSocketServer(12345, "fullchain.pem", "privkey.pem", 0.1f)
+    {
+        logFile.open("data_log.txt", ios::app); // Buka file log untuk menulis data historis
+        if (!logFile.is_open())
+            cerr << "[ERROR] Tidak bisa membuka file log!\n";
     }
 
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background-color: #f4f4f4;
-      margin: 0;
-      padding: 20px;
-      text-align: center;
+    ~Server()
+    {
+        if (logFile.is_open())
+            logFile.close();
     }
 
-    h1 {
-      color: #247e7e;
-      margin-bottom: 10px;
+    // Saat client tersambung
+    bool OnClientConnect(const ws_connection& client) override
+    {
+        cout << "[" << client.address->first << ":" << client.uid << "] Connected\n";
+        return true;
     }
 
-    #latest-value {
-      font-size: 18px;
-      color: #333;
-      margin-bottom: 20px;
+    // Saat client terputus
+    void OnClientDisconnect(const ws_connection& client) override
+    {
+        cout << "[" << client.address->first << ":" << client.uid << "] Disconnected\n";
     }
 
-    #chart-container {
-      width: 90%;
-      max-width: 900px;
-      margin: auto;
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    }
+    // Saat data masuk dari client (ESP32, dll)
+    bool OnClientIncoming(const ws_connection& client, const string& data, bool text_mode) override
+    {
+        if (text_mode && data.size() > 5 && data.substr(0, 5) == "drb42")
+        {
+            string valueStr = data.substr(5);
 
-    canvas {
-      max-width: 100%;
-    }
+            if (valueStr == "15") // Anggap 15 sebagai sinyal idle, tidak dicatat
+                return true;
 
-    .footer {
-      margin-top: 30px;
-      font-size: 14px;
-      color: #999;
-    }
-  </style>
-</head>
-<body>
-  <h1>Dashboard Monitoring Arus Listrik (Ampere)</h1>
-  <div id="latest-value">Arus saat ini: 0.00 A</div>
+            try
+            {
+                float y = stof(valueStr); // Konversi string ke float
+                string json = "{\"x\":" + to_string(nTick++) + ",\"y\":" + to_string(y) + "}";
 
-  <div id="chart-container">
-    <canvas id="chart"></canvas>
-  </div>
-
-  <div class="footer">Simulasi Dummy Data (Tanpa WebSocket)</div>
-
-  <script>
-    const ctx = document.getElementById('chart').getContext('2d');
-
-    const data = {
-      labels: [],
-      datasets: [{
-        label: 'Arus (Ampere)',
-        data: [],
-        borderColor: '#247e7e',
-        backgroundColor: 'rgba(36, 126, 126, 0.1)',
-        tension: 0.3,
-        pointRadius: 2,
-        fill: true
-      }]
-    };
-
-    const config = {
-      type: 'line',
-      data: data,
-      options: {
-        responsive: true,
-        animation: false,
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: 'Waktu (detik)'
+                WriteToAll(json);   // Kirim data JSON ke semua client WebSocket
+                cout << json << endl;
+                LogData(y);         // Simpan ke file log
             }
-          },
-          y: {
-            title: {
-              display: true,
-              text: 'Ampere'
-            },
-            beginAtZero: true
-          }
-        },
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top'
-          }
+            catch (const exception& e)
+            {
+                cerr << "[ERROR] Gagal parsing: " << e.what() << " | Data: " << valueStr << endl;
+            }
         }
-      }
-    };
+        return true;
+    }
 
-    const chart = new Chart(ctx, config);
+    // Validasi data awal koneksi client
+    bool OnValidateIncoming(const string& data) override
+    {
+        return data.size() > 5 && data.substr(0, 5) == "drb42";
+    }
 
-    // Simulasi data dummy
-    let counter = 0;
-    setInterval(() => {
-      const dummyY = parseFloat((Math.random() * 5).toFixed(2)); // 0 - 5 A
-      data.labels.push(counter);
-      data.datasets[0].data.push(dummyY);
+    // Dipanggil setiap frame (tidak digunakan saat ini)
+    bool OnUpdate(const float fElapsedTime) override
+    {
+        return true;
+    }
 
-      if (data.labels.length > 50) {
-        data.labels.shift();
-        data.datasets[0].data.shift();
-      }
+private:
+    int nTick = 0;
+    ofstream logFile;
 
-      chart.update();
-      document.getElementById('latest-value').textContent = `Arus saat ini: ${dummyY} A`;
-      counter++;
-    }, 1000);
-  </script>
-</body>
-</html>
+    // Simpan data ke file log dengan timestamp
+    void LogData(float y)
+    {
+        if (!logFile.is_open()) return;
 
+        auto t = time(nullptr);
+        auto tm = *localtime(&t);
+
+        ostringstream oss;
+        oss << put_time(&tm, "%Y-%m-%d %H:%M:%S");
+
+        logFile << oss.str() << ", " << y << " A" << endl;
+    }
+};
+
+int main()
+{
+    Server server;
+    server.Start();
+    return 0;
+}
